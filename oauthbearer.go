@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"log"
 )
 
 // The OAUTHBEARER mechanism name.
@@ -35,6 +37,7 @@ type oauthBearerClient struct {
 }
 
 func (a *oauthBearerClient) Start() (mech string, ir []byte, err error) {
+	log.Println("go-sasal-start running start")
 	var authzid string
 	if a.Username != "" {
 		authzid = "a=" + a.Username
@@ -50,10 +53,15 @@ func (a *oauthBearerClient) Start() (mech string, ir []byte, err error) {
 	}
 	str += "\x01auth=Bearer " + a.Token + "\x01\x01"
 	ir = []byte(str)
+	log.Println("go-sasal-start return start")
+	if a != nil {
+		log.Println("go-sasal-start return start printing a ", a.Username, " ", a.Host, " ", a.Port, " ", a.Token)
+	}
 	return OAuthBearer, ir, nil
 }
 
 func (a *oauthBearerClient) Next(challenge []byte) ([]byte, error) {
+	log.Println("go-sasal-next running client-next")
 	authBearerErr := &OAuthBearerError{}
 	if err := json.Unmarshal(challenge, authBearerErr); err != nil {
 		return nil, err
@@ -92,6 +100,7 @@ func (a *oauthBearerServer) Next(response []byte) (challenge []byte, done bool, 
 	// Per RFC, we cannot just send an error, we need to return JSON-structured
 	// value as a challenge and then after getting dummy response from the
 	// client stop the exchange.
+	log.Println("go-sasl running next from server")
 	if a.failErr != nil {
 		// Server libraries (go-smtp, go-imap) will not call Next on
 		// protocol-specific SASL cancel response ('*'). However, GS2 (and
@@ -122,6 +131,7 @@ func (a *oauthBearerServer) Next(response []byte) (challenge []byte, done bool, 
 	//   \x01host=...\x01auth=...\x01\x01
 	parts := bytes.SplitN(response, []byte{','}, 3)
 	if len(parts) != 3 {
+		log.Println("go-sasl next error len(parts) != 3")
 		return a.fail("Invalid response")
 	}
 	flag := parts[0]
@@ -132,6 +142,7 @@ func (a *oauthBearerServer) Next(response []byte) (challenge []byte, done bool, 
 	opts := OAuthBearerOptions{}
 	if len(authzid) > 0 {
 		if !bytes.HasPrefix(authzid, []byte("a=")) {
+			log.Println("go-sasl next error len(authzid) > 0 ")
 			return a.fail("Invalid response, missing 'a=' in gs2-authzid")
 		}
 		opts.Username = string(bytes.TrimPrefix(authzid, []byte("a=")))
@@ -155,6 +166,7 @@ func (a *oauthBearerServer) Next(response []byte) (challenge []byte, done bool, 
 
 		pParts := bytes.SplitN(p, []byte{'='}, 2)
 		if len(pParts) != 2 {
+			log.Println("go-sasl next error len(pParts) != 2 ")
 			return a.fail("Invalid response, missing '='")
 		}
 
@@ -164,6 +176,7 @@ func (a *oauthBearerServer) Next(response []byte) (challenge []byte, done bool, 
 		case "port":
 			port, err := strconv.ParseUint(string(pParts[1]), 10, 16)
 			if err != nil {
+				log.Println("go-sasl next error port missing ")
 				return a.fail("Invalid response, malformed 'port' value")
 			}
 			opts.Port = int(port)
@@ -172,10 +185,12 @@ func (a *oauthBearerServer) Next(response []byte) (challenge []byte, done bool, 
 			strValue := string(pParts[1])
 			// Token type is case-insensitive.
 			if !strings.HasPrefix(strings.ToLower(strValue), prefix) {
+				log.Println("go-sasl next error Unsupported token type ")
 				return a.fail("Unsupported token type")
 			}
 			opts.Token = strValue[len(prefix):]
 		default:
+			log.Println("go-sasl next error default Invalid response, unknown parameter")
 			return a.fail("Invalid response, unknown parameter: " + string(pParts[0]))
 		}
 	}
@@ -184,12 +199,13 @@ func (a *oauthBearerServer) Next(response []byte) (challenge []byte, done bool, 
 	if authzErr != nil {
 		blob, err := json.Marshal(authzErr)
 		if err != nil {
+			log.Println("go-sasl next error authzErr marshal error")
 			panic(err) // wtf
 		}
 		a.failErr = authzErr
 		return blob, false, nil
 	}
-
+	log.Println("go-sasl return next from server")
 	return nil, true, nil
 }
 
